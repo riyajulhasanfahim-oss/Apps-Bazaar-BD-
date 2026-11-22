@@ -7,6 +7,7 @@ import {
   KeyRound,
   Loader2,
   Lock,
+  Mail,
   ShieldCheck,
 } from 'lucide-react';
 
@@ -19,6 +20,7 @@ type AuthMode = 'loading' | 'env' | 'claimed' | 'unclaimed' | 'error';
 
 export function AdminLogin({ onAuthenticated, onBackToStore }: AdminLoginProps) {
   const [authMode, setAuthMode] = useState<AuthMode>('loading');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -30,6 +32,12 @@ export function AdminLogin({ onAuthenticated, onBackToStore }: AdminLoginProps) 
     setError(null);
     try {
       const res = await fetch('/api/admin/auth-status');
+      const contentType = res.headers.get('content-type') ?? '';
+      if (!contentType.includes('application/json')) {
+        setAuthMode('error');
+        setError('Admin authentication service is unavailable.');
+        return;
+      }
       const data = await res.json();
       if (!res.ok || !data?.mode) {
         setAuthMode('error');
@@ -52,6 +60,12 @@ export function AdminLogin({ onAuthenticated, onBackToStore }: AdminLoginProps) 
     if (isSubmitting) return;
     setError(null);
 
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setError('Please enter a valid admin email address.');
+      return;
+    }
+
     if (!password) {
       setError('Please enter your admin password.');
       return;
@@ -62,12 +76,12 @@ export function AdminLogin({ onAuthenticated, onBackToStore }: AdminLoginProps) 
       const res = await fetch('/api/admin/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ email: normalizedEmail, password }),
       });
       const data = await res.json().catch(() => null);
 
       if (!res.ok || !data?.token) {
-        setError(data?.error ?? 'Authentication failed. Please check your password.');
+        setError(data?.error ?? 'Authentication failed. Please check your email and password.');
         return;
       }
 
@@ -85,6 +99,12 @@ export function AdminLogin({ onAuthenticated, onBackToStore }: AdminLoginProps) 
     if (isSubmitting) return;
     setError(null);
 
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setError('Please enter a valid admin email address.');
+      return;
+    }
+
     if (password.length < 8) {
       setError('Password must be at least 8 characters long.');
       return;
@@ -99,12 +119,12 @@ export function AdminLogin({ onAuthenticated, onBackToStore }: AdminLoginProps) 
       const res = await fetch('/api/admin/bootstrap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ email: normalizedEmail, password }),
       });
       const data = await res.json().catch(() => null);
 
       if (!res.ok || !data?.token) {
-        setError(data?.error ?? 'Unable to save initial admin password.');
+        setError(data?.error ?? 'Unable to save initial admin credentials.');
         await loadAuthStatus();
         return;
       }
@@ -138,12 +158,12 @@ export function AdminLogin({ onAuthenticated, onBackToStore }: AdminLoginProps) 
             </div>
             <div>
               <h1 className="font-display text-[19px] font-bold text-[#1F1F1F] leading-tight">
-                {authMode === 'unclaimed' ? 'First-Time Admin Setup' : 'Apps Bazaar Admin'}
+                {authMode === 'unclaimed' ? 'First-Time Admin Setup' : 'Apps Bazaar Admin Login'}
               </h1>
               <p className="text-[12.5px] text-[#5F6368] mt-0.5">
                 {authMode === 'unclaimed'
-                  ? 'Set your private administrator password to lock this portal.'
-                  : 'Protected order management & payment verification'}
+                  ? 'Set your administrator email and password to lock this portal.'
+                  : 'Sign in with your administrator email & password'}
               </p>
             </div>
           </div>
@@ -172,13 +192,37 @@ export function AdminLogin({ onAuthenticated, onBackToStore }: AdminLoginProps) 
           )}
 
           {(authMode === 'env' || authMode === 'claimed') && (
-            <form onSubmit={handleLogin} className="space-y-4">
+            <form onSubmit={handleLogin} className="space-y-4" noValidate>
+              <div>
+                <label
+                  htmlFor="admin-email-input"
+                  className="block text-[12.5px] font-semibold text-[#3C4043] mb-1.5"
+                >
+                  Email Address
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    id="admin-email-input"
+                    type="email"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (error) setError(null);
+                    }}
+                    placeholder="Enter admin email address"
+                    autoComplete="email"
+                    className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-[14px] text-[#1F1F1F] focus:outline-none focus:border-[#1A73E8] focus:ring-2 focus:ring-[#1A73E8]/25"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label
                   htmlFor="admin-password-input"
                   className="block text-[12.5px] font-semibold text-[#3C4043] mb-1.5"
                 >
-                  Administrator Password
+                  Password
                 </label>
                 <div className="relative">
                   <input
@@ -227,7 +271,7 @@ export function AdminLogin({ onAuthenticated, onBackToStore }: AdminLoginProps) 
                 ) : (
                   <>
                     <ShieldCheck className="w-4 h-4" />
-                    <span>Sign In to Admin Panel</span>
+                    <span>Login</span>
                   </>
                 )}
               </button>
@@ -235,11 +279,36 @@ export function AdminLogin({ onAuthenticated, onBackToStore }: AdminLoginProps) 
           )}
 
           {authMode === 'unclaimed' && (
-            <form onSubmit={handleFirstRunBootstrap} className="space-y-4">
+            <form onSubmit={handleFirstRunBootstrap} className="space-y-4" noValidate>
               <div className="rounded-xl bg-blue-50/75 border border-blue-200/80 p-3 text-[12px] leading-relaxed text-[#374151]">
-                No <code className="font-mono text-[#1A73E8]">ADMIN_PASSCODE</code> secret is set
-                yet. Claim your admin password below (this one-time setup locks immediately after
-                saving).
+                No <code className="font-mono text-[#1A73E8]">ADMIN_EMAIL</code> /{' '}
+                <code className="font-mono text-[#1A73E8]">ADMIN_PASSCODE</code> secret is set yet.
+                Enter your administrator email and password below to lock this portal (one-time
+                setup).
+              </div>
+
+              <div>
+                <label
+                  htmlFor="setup-admin-email"
+                  className="block text-[12.5px] font-semibold text-[#3C4043] mb-1"
+                >
+                  Email Address
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    id="setup-admin-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (error) setError(null);
+                    }}
+                    placeholder="Enter admin email address"
+                    autoComplete="email"
+                    className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 text-[14px] text-[#1F1F1F] focus:outline-none focus:border-[#1A73E8] focus:ring-2 focus:ring-[#1A73E8]/25"
+                  />
+                </div>
               </div>
 
               <div>
@@ -312,7 +381,7 @@ export function AdminLogin({ onAuthenticated, onBackToStore }: AdminLoginProps) 
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Saving Admin Password...</span>
+                    <span>Saving Admin Credentials...</span>
                   </>
                 ) : (
                   <>

@@ -62,6 +62,13 @@ export default function App() {
     }
   };
 
+  const navigateToAdmin = () => {
+    if (!isAdminPath(window.location.pathname)) {
+      window.history.pushState({}, '', '/admin');
+      setPathname('/admin');
+    }
+  };
+
   if (isAdminPath(pathname)) {
     return <AdminPortal onBackToStore={navigateToStore} />;
   }
@@ -85,7 +92,7 @@ export default function App() {
     <div className="min-h-screen bg-white text-[#1F1F1F] overflow-x-hidden sm:py-6 sm:px-4">
       <main className="mx-auto w-full max-w-[600px] bg-white px-4 py-5 sm:px-7 sm:py-7 sm:rounded-[28px] sm:border sm:border-slate-200/80 sm:shadow-[0_6px_30px_rgba(15,23,42,0.05)] space-y-5 sm:space-y-6">
         {/* 1. App Header */}
-        <AppHeader />
+        <AppHeader onOpenAdmin={navigateToAdmin} />
 
         {/* 2. App Stats */}
         <AppStats />

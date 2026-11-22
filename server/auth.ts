@@ -98,17 +98,19 @@ export function verifyTimingSafePlaintext(candidate: string, expected: string): 
 interface SessionPayload {
   sub: 'admin';
   role: 'admin';
+  email?: string;
   jti: string;
   iat: number;
   exp: number;
 }
 
-export function issueAdminToken(): { token: string; expiresAt: string } {
+export function issueAdminToken(email?: string): { token: string; expiresAt: string } {
   const now = Date.now();
   const exp = now + TOKEN_TTL_MS;
   const payload: SessionPayload = {
     sub: 'admin',
     role: 'admin',
+    ...(email ? { email } : {}),
     jti: crypto.randomBytes(12).toString('hex'),
     iat: now,
     exp,

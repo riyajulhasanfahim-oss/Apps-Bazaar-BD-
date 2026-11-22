@@ -165,6 +165,12 @@ if (!existingCols.has('invoice_ref')) {
   db.exec(`ALTER TABLE orders ADD COLUMN invoice_ref TEXT;`);
 }
 
+const adminCols = db.prepare(`PRAGMA table_info(admin_config)`).all() as Array<{ name: string }>;
+const existingAdminCols = new Set(adminCols.map((c) => c.name));
+if (!existingAdminCols.has('email')) {
+  db.exec(`ALTER TABLE admin_config ADD COLUMN email TEXT;`);
+}
+
 // Seed default configurable payment methods only if missing (preserves Admin edits)
 
 const seedPaymentStmt = db.prepare(`
@@ -420,11 +426,62 @@ export function createOrder(payload: NewOrderPayload): OrderRecord {
   return mapRowToOrder(row);
 }
 
+export interface AdminConfigRecord {
+  email: string | null;
+  passwordHash: string;
+}
+
+export function getClaimedAdminConfig(): AdminConfigRecord | null {
+  const row = db
+    .prepare(`SELECT email, password_hash FROM admin_config WHERE id = 1 LIMIT 1`)
+    .get() as { email: string | null; password_hash: string } | undefined;
+  return row ? { email: row.email ?? null, passwordHash: row.password_hash } : null;
+}
+
+export function claimAdminCredentials(email: string, passwordHash: string): boolean {
+  const cleanEmail = email.trim().toLowerCase();
+  const now = new Date().toISOString();
+  const res = db
+    .prepare(
+      `
+      INSERT INTO admin_config (id, email, password_hash, created_at)
+      VALUES (1, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        email = excluded.email,
+        password_hash = excluded.password_hash,
+        created_at = excluded.created_at
+      WHERE admin_config.password_hash = ''
+    `
+    )
+    .run(cleanEmail, passwordHash, now);
+  return res.changes === 1;
+}
+
+export function bindAdminEmailIfUnset(email: string): boolean {
+  const cleanEmail = email.trim().toLowerCase();
+  const existing = getClaimedAdminConfig();
+  if (!existing) {
+    try {
+      db.prepare(
+        `INSERT INTO admin_config (id, email, password_hash, created_at) VALUES (1, ?, '', ?)`
+      ).run(cleanEmail, new Date().toISOString());
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  if (!existing.email) {
+    const res = db
+      .prepare(`UPDATE admin_config SET email = ? WHERE id = 1 AND (email IS NULL OR email = '')`)
+      .run(cleanEmail);
+    return res.changes === 1;
+  }
+  return false;
+}
+
 export function getClaimedAdminHash(): string | null {
-  const row = db.prepare(`SELECT password_hash FROM admin_config WHERE id = 1 LIMIT 1`).get() as
-    | { password_hash: string }
-    | undefined;
-  return row ? row.password_hash : null;
+  const config = getClaimedAdminConfig();
+  return config ? config.passwordHash : null;
 }
 
 export function claimAdminHash(passwordHash: string): boolean {

@@ -1,7 +1,11 @@
 import { BadgeCheck, ShieldCheck } from 'lucide-react';
 import { APP_CONTENT } from '../data/appContent';
 
-export function AppHeader() {
+interface AppHeaderProps {
+  onOpenAdmin?: () => void;
+}
+
+export function AppHeader({ onOpenAdmin }: AppHeaderProps) {
   const { name, developer, verifiedLabel } = APP_CONTENT.appInfo;
 
   return (
@@ -52,9 +56,13 @@ export function AppHeader() {
         </h1>
 
         <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-          <span className="text-[14px] sm:text-[14.5px] font-semibold text-[#1A73E8] leading-snug">
+          <button
+            type="button"
+            onClick={onOpenAdmin}
+            className="text-[14px] sm:text-[14.5px] font-semibold text-[#1A73E8] leading-snug hover:underline focus-visible:outline-2 focus-visible:outline-[#1A73E8] rounded-sm cursor-pointer bg-transparent p-0 border-0 text-left"
+          >
             By {developer}
-          </span>
+          </button>
           <BadgeCheck
             className="w-4 h-4 text-white fill-[#1A73E8] shrink-0"
             aria-label="Verified developer badge"

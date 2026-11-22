@@ -5,10 +5,11 @@ import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 import { isValidPaymentMethod, validateOrderInput } from './shared/orderValidation.ts';
 import {
-  claimAdminHash,
+  bindAdminEmailIfUnset,
+  claimAdminCredentials,
   createOrder,
   findDuplicateTransaction,
-  getClaimedAdminHash,
+  getClaimedAdminConfig,
   getOrderById,
   getOrderSummaryStats,
   getVideoContent,
@@ -73,6 +74,16 @@ function generateUserId(): string {
 
 function getEnvAdminPasscode(): string {
   return typeof process.env.ADMIN_PASSCODE === 'string' ? process.env.ADMIN_PASSCODE.trim() : '';
+}
+
+function getEnvAdminEmail(): string {
+  return typeof process.env.ADMIN_EMAIL === 'string'
+    ? process.env.ADMIN_EMAIL.trim().toLowerCase()
+    : '';
+}
+
+function isValidEmailAddress(email: string): boolean {
+  return email.length >= 5 && email.length <= 120 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 function getClientIp(req: express.Request): string {
@@ -199,27 +210,39 @@ async function startServer() {
     }
   });
 
-  // Admin Auth Status (never returns credentials or hashes)
+  // Admin Auth Status (never returns credentials, emails, or hashes)
   app.get('/api/admin/auth-status', (_req, res) => {
     const envPasscode = getEnvAdminPasscode();
     if (envPasscode.length > 0) {
       return res.json({ mode: 'env' });
     }
-    const claimedHash = getClaimedAdminHash();
-    return res.json({ mode: claimedHash ? 'claimed' : 'unclaimed' });
+    const claimedConfig = getClaimedAdminConfig();
+    const hasClaimedPassword = Boolean(claimedConfig && claimedConfig.passwordHash.length > 0);
+    return res.json({ mode: hasClaimedPassword ? 'claimed' : 'unclaimed' });
   });
 
-  // One-time First-Run Admin Setup
+  // One-time First-Run Admin Setup (Email + Scrypt Hashed Password)
   app.post('/api/admin/bootstrap', (req, res) => {
     const envPasscode = getEnvAdminPasscode();
-    if (envPasscode.length > 0 || getClaimedAdminHash()) {
+    const existing = getClaimedAdminConfig();
+    if (envPasscode.length > 0 || (existing && existing.passwordHash.length > 0)) {
       return res.status(403).json({
         error: 'Admin setup is locked because an admin credential is already configured.',
       });
     }
 
+    const email =
+      req.body && typeof req.body.email === 'string'
+        ? req.body.email.trim().toLowerCase()
+        : '';
     const password =
       req.body && typeof req.body.password === 'string' ? req.body.password : '';
+
+    if (!isValidEmailAddress(email)) {
+      return res.status(400).json({
+        error: 'Please enter a valid administrator email address.',
+      });
+    }
 
     if (password.length < 8 || password.length > 128) {
       return res.status(400).json({
@@ -228,22 +251,22 @@ async function startServer() {
     }
 
     const passwordHash = hashPassword(password);
-    const created = claimAdminHash(passwordHash);
+    const created = claimAdminCredentials(email, passwordHash);
     if (!created) {
       return res.status(403).json({
-        error: 'Admin password has already been claimed.',
+        error: 'Admin credentials have already been claimed.',
       });
     }
 
-    const session = issueAdminToken();
+    const session = issueAdminToken(email);
     return res.status(201).json({
       token: session.token,
       expiresAt: session.expiresAt,
-      admin: { role: 'admin' },
+      admin: { role: 'admin', email },
     });
   });
 
-  // Admin Login
+  // Admin Login (Email + Password)
   app.post('/api/admin/login', (req, res) => {
     const clientIp = getClientIp(req);
     const rateCheck = checkLoginRateLimit(clientIp);
@@ -253,39 +276,64 @@ async function startServer() {
       });
     }
 
+    const email =
+      req.body && typeof req.body.email === 'string'
+        ? req.body.email.trim().toLowerCase()
+        : '';
     const password =
       req.body && typeof req.body.password === 'string' ? req.body.password : '';
 
+    if (!email || !isValidEmailAddress(email)) {
+      return res.status(400).json({ error: 'Please enter a valid admin email address.' });
+    }
     if (!password) {
       return res.status(400).json({ error: 'Please enter the admin password.' });
     }
 
     const envPasscode = getEnvAdminPasscode();
+    const envEmail = getEnvAdminEmail();
+    const claimedConfig = getClaimedAdminConfig();
+
     let authenticated = false;
 
     if (envPasscode.length > 0) {
-      authenticated = verifyTimingSafePlaintext(password, envPasscode);
+      const passwordOk = verifyTimingSafePlaintext(password, envPasscode);
+      const expectedEmail = envEmail || claimedConfig?.email || '';
+      if (expectedEmail) {
+        const emailOk = verifyTimingSafePlaintext(email, expectedEmail);
+        authenticated = emailOk && passwordOk;
+      } else if (passwordOk) {
+        // Bind administrator email atomically on first valid ADMIN_PASSCODE verification
+        authenticated = bindAdminEmailIfUnset(email);
+      }
     } else {
-      const claimedHash = getClaimedAdminHash();
-      if (!claimedHash) {
+      if (!claimedConfig || !claimedConfig.passwordHash) {
         return res.status(403).json({
-          error: 'No admin password configured yet. Complete first-time setup first.',
+          error: 'No admin account configured yet. Complete first-time setup first.',
         });
       }
-      authenticated = verifyScryptPassword(password, claimedHash);
+      const expectedEmail = envEmail || claimedConfig.email || '';
+      if (!expectedEmail) {
+        return res.status(403).json({
+          error: 'Admin email is not configured on the server.',
+        });
+      }
+      const emailOk = verifyTimingSafePlaintext(email, expectedEmail);
+      const passwordOk = verifyScryptPassword(password, claimedConfig.passwordHash);
+      authenticated = emailOk && passwordOk;
     }
 
     if (!authenticated) {
       recordFailedLogin(clientIp);
-      return res.status(401).json({ error: 'Invalid admin password.' });
+      return res.status(401).json({ error: 'Invalid email address or password.' });
     }
 
     clearFailedLogins(clientIp);
-    const session = issueAdminToken();
+    const session = issueAdminToken(email);
     return res.json({
       token: session.token,
       expiresAt: session.expiresAt,
-      admin: { role: 'admin' },
+      admin: { role: 'admin', email },
     });
   });
 

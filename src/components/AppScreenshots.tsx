@@ -77,7 +77,7 @@ export function AppScreenshots({
           id="screenshots-heading"
           className="font-display text-[17px] sm:text-[18px] font-bold text-[#1F1F1F] tracking-[-0.01em]"
         >
-          App Screenshots
+          Customer Reviews
         </h2>
         <button
           type="button"
