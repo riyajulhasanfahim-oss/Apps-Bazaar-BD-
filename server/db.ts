@@ -1,7 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import type { PaymentMethodName } from '../shared/orderValidation.ts';
+import {
+  isValidBdPhone,
+  normalizeBdPhone,
+  type PaymentMethodName,
+} from '../shared/orderValidation.ts';
 
 export type PaymentStatus = 'Pending Verification' | 'Approved' | 'Rejected';
 export type OrderStatus = 'Pending' | 'Approved' | 'Processing' | 'Completed' | 'Rejected';
@@ -20,6 +24,8 @@ export type AdminOrderAction =
 export interface OrderRecord {
   id: number;
   orderId: string;
+  userId: string;
+  invoiceRef: string | null;
   customerName: string;
   productName: string;
   amount: number;
@@ -40,6 +46,17 @@ export interface OrderRecord {
   updatedAt: string;
 }
 
+export interface PaymentSettingRecord {
+  id: PaymentMethodName;
+  displayName: string;
+  accountNumber: string;
+  dialCode: string;
+  brandColor: string;
+  instructions: string[];
+  isActive: boolean;
+  updatedAt: string;
+}
+
 export interface OrderSummaryStats {
   totalOrders: number;
   pendingVerification: number;
@@ -50,6 +67,8 @@ export interface OrderSummaryStats {
 
 export interface NewOrderPayload {
   orderId: string;
+  userId: string;
+  invoiceRef: string | null;
   customerName: string;
   productName: string;
   amount: number;
@@ -76,6 +95,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id TEXT NOT NULL UNIQUE,
+    user_id TEXT,
+    invoice_ref TEXT,
     customer_name TEXT NOT NULL,
     product_name TEXT NOT NULL,
     amount INTEGER NOT NULL,
@@ -104,19 +125,132 @@ db.exec(`
     password_hash TEXT NOT NULL,
     created_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS payment_settings (
+    id TEXT PRIMARY KEY,
+    display_name TEXT NOT NULL,
+    account_number TEXT NOT NULL,
+    dial_code TEXT NOT NULL,
+    brand_color TEXT NOT NULL,
+    instructions_json TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL
+  );
 `);
 
-// Preserve existing databases created in Step 3 by adding rejection_reason if absent
+// Safe additive migrations for existing databases
 const columns = db.prepare(`PRAGMA table_info(orders)`).all() as Array<{ name: string }>;
-const hasRejectionReason = columns.some((col) => col.name === 'rejection_reason');
-if (!hasRejectionReason) {
+const existingCols = new Set(columns.map((c) => c.name));
+if (!existingCols.has('rejection_reason')) {
   db.exec(`ALTER TABLE orders ADD COLUMN rejection_reason TEXT;`);
+}
+if (!existingCols.has('user_id')) {
+  db.exec(`ALTER TABLE orders ADD COLUMN user_id TEXT;`);
+}
+if (!existingCols.has('invoice_ref')) {
+  db.exec(`ALTER TABLE orders ADD COLUMN invoice_ref TEXT;`);
+}
+
+// Seed default configurable payment methods only if missing (preserves Admin edits)
+const DEFAULT_PAYMENT_SETTINGS: Array<{
+  id: PaymentMethodName;
+  displayName: string;
+  accountNumber: string;
+  dialCode: string;
+  brandColor: string;
+  instructions: string[];
+}> = [
+  {
+    id: 'bKash',
+    displayName: 'bKash Personal',
+    accountNumber: '01864670673',
+    dialCode: '*247#',
+    brandColor: '#E2136E',
+    instructions: [
+      '*247# ডায়াল করে আপনার BKASH মোবাইল মেনুতে যান অথবা BKASH অ্যাপে যান।',
+      '"Send Money" -এ ক্লিক করুন।',
+      'প্রাপক নম্বর হিসেবে প্রদর্শিত নম্বরে টাকা পাঠান।',
+      'সঠিক পরিমাণ (৳999.00) টাকা পাঠান।',
+      'নিশ্চিত করতে এখন আপনার BKASH মোবাইল মেনু পিন লিখুন।',
+      'সবকিছু ঠিক থাকলে, আপনি BKASH থেকে একটি নিশ্চিতকরণ বার্তা পাবেন।',
+      'এখন উপরের বক্সে আপনার Transaction ID দিন এবং নিচের Request Now বাটনে ক্লিক করুন।',
+    ],
+  },
+  {
+    id: 'Nagad',
+    displayName: 'Nagad Personal',
+    accountNumber: '01864670673',
+    dialCode: '*167#',
+    brandColor: '#F7941D',
+    instructions: [
+      '*167# ডায়াল করে আপনার NAGAD মোবাইল মেনুতে যান অথবা NAGAD অ্যাপে যান।',
+      '"Send Money" -এ ক্লিক করুন।',
+      'প্রাপক নম্বর হিসেবে প্রদর্শিত নম্বরে টাকা পাঠান।',
+      'সঠিক পরিমাণ (৳999.00) টাকা পাঠান।',
+      'নিশ্চিত করতে এখন আপনার NAGAD মোবাইল মেনু পিন লিখুন।',
+      'সবকিছু ঠিক থাকলে, আপনি NAGAD থেকে একটি নিশ্চিতকরণ বার্তা পাবেন।',
+      'এখন উপরের বক্সে আপনার Transaction ID দিন এবং নিচের Request Now বাটনে ক্লিক করুন।',
+    ],
+  },
+  {
+    id: 'Rocket',
+    displayName: 'Rocket Personal',
+    accountNumber: '01864670673',
+    dialCode: '*322#',
+    brandColor: '#8C3494',
+    instructions: [
+      '*322# ডায়াল করে আপনার ROCKET মোবাইল মেনুতে যান অথবা ROCKET অ্যাপে যান।',
+      '"Send Money" -এ ক্লিক করুন।',
+      'প্রাপক নম্বর হিসেবে প্রদর্শিত নম্বরে টাকা পাঠান।',
+      'সঠিক পরিমাণ (৳999.00) টাকা পাঠান।',
+      'নিশ্চিত করতে এখন আপনার ROCKET মোবাইল মেনু পিন লিখুন।',
+      'সবকিছু ঠিক থাকলে, আপনি ROCKET থেকে একটি নিশ্চিতকরণ বার্তা পাবেন।',
+      'এখন উপরের বক্সে আপনার Transaction ID দিন এবং নিচের Request Now বাটনে ক্লিক করুন।',
+    ],
+  },
+  {
+    id: 'Upay',
+    displayName: 'Upay Personal',
+    accountNumber: '01864670673',
+    dialCode: '*268#',
+    brandColor: '#00A5A8',
+    instructions: [
+      '*268# ডায়াল করে আপনার UPAY মোবাইল মেনুতে যান অথবা UPAY অ্যাপে যান।',
+      '"Send Money" -এ ক্লিক করুন।',
+      'প্রাপক নম্বর হিসেবে প্রদর্শিত নম্বরে টাকা পাঠান।',
+      'সঠিক পরিমাণ (৳999.00) টাকা পাঠান।',
+      'নিশ্চিত করতে এখন আপনার UPAY মোবাইল মেনু পিন লিখুন।',
+      'সবকিছু ঠিক থাকলে, আপনি UPAY থেকে একটি নিশ্চিতকরণ বার্তা পাবেন।',
+      'এখন উপরের বক্সে আপনার Transaction ID দিন এবং নিচের Request Now বাটনে ক্লিক করুন।',
+    ],
+  },
+];
+
+const seedPaymentStmt = db.prepare(`
+  INSERT OR IGNORE INTO payment_settings (
+    id, display_name, account_number, dial_code, brand_color, instructions_json, is_active, updated_at
+  ) VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+`);
+
+const seedTime = new Date().toISOString();
+for (const method of DEFAULT_PAYMENT_SETTINGS) {
+  seedPaymentStmt.run(
+    method.id,
+    method.displayName,
+    method.accountNumber,
+    method.dialCode,
+    method.brandColor,
+    JSON.stringify(method.instructions),
+    seedTime
+  );
 }
 
 function mapRowToOrder(row: Record<string, unknown>): OrderRecord {
   return {
     id: Number(row.id),
     orderId: String(row.order_id),
+    userId: row.user_id ? String(row.user_id) : 'GUEST',
+    invoiceRef: row.invoice_ref ? String(row.invoice_ref) : null,
     customerName: String(row.customer_name),
     productName: String(row.product_name),
     amount: Number(row.amount),
@@ -138,6 +272,118 @@ function mapRowToOrder(row: Record<string, unknown>): OrderRecord {
   };
 }
 
+function mapRowToPaymentSetting(row: Record<string, unknown>): PaymentSettingRecord {
+  let parsedInstructions: string[] = [];
+  try {
+    const raw = JSON.parse(String(row.instructions_json));
+    if (Array.isArray(raw)) {
+      parsedInstructions = raw.map((item) => String(item)).filter(Boolean);
+    }
+  } catch {
+    parsedInstructions = [];
+  }
+
+  return {
+    id: String(row.id) as PaymentMethodName,
+    displayName: String(row.display_name),
+    accountNumber: String(row.account_number),
+    dialCode: String(row.dial_code),
+    brandColor: String(row.brand_color),
+    instructions: parsedInstructions,
+    isActive: Number(row.is_active) === 1,
+    updatedAt: String(row.updated_at),
+  };
+}
+
+export function listPaymentSettings(activeOnly = false): PaymentSettingRecord[] {
+  const sql = activeOnly
+    ? `SELECT * FROM payment_settings WHERE is_active = 1`
+    : `SELECT * FROM payment_settings`;
+  const rows = db.prepare(sql).all() as Array<Record<string, unknown>>;
+  const orderIndex: Record<string, number> = { bKash: 0, Nagad: 1, Rocket: 2, Upay: 3 };
+  return rows
+    .map(mapRowToPaymentSetting)
+    .sort((a, b) => (orderIndex[a.id] ?? 99) - (orderIndex[b.id] ?? 99));
+}
+
+export function updatePaymentSetting(
+  methodId: PaymentMethodName,
+  input: {
+    displayName: string;
+    accountNumber: string;
+    dialCode: string;
+    instructions: string[];
+    isActive: boolean;
+  }
+): { ok: true; setting: PaymentSettingRecord } | { ok: false; status: number; error: string } {
+  const existing = db
+    .prepare(`SELECT * FROM payment_settings WHERE id = ? LIMIT 1`)
+    .get(methodId) as Record<string, unknown> | undefined;
+
+  if (!existing) {
+    return { ok: false, status: 404, error: 'Payment method not found.' };
+  }
+
+  const displayName = input.displayName.trim();
+  const dialCode = input.dialCode.trim();
+  const cleanNumber = normalizeBdPhone(input.accountNumber.trim());
+
+  if (displayName.length < 2 || displayName.length > 40) {
+    return { ok: false, status: 400, error: 'Display name must be 2–40 characters.' };
+  }
+  if (!isValidBdPhone(cleanNumber)) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Enter a valid 11-digit Bangladesh mobile number (e.g., 017XXXXXXXX).',
+    };
+  }
+  if (dialCode.length < 2 || dialCode.length > 16) {
+    return { ok: false, status: 400, error: 'Dial code must be 2–16 characters (e.g., *247#).' };
+  }
+
+  const cleanedInstructions = input.instructions
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .slice(0, 10);
+
+  if (cleanedInstructions.length === 0) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Please provide at least one payment instruction step.',
+    };
+  }
+
+  const now = new Date().toISOString();
+  db.prepare(
+    `
+    UPDATE payment_settings
+    SET display_name = ?,
+        account_number = ?,
+        dial_code = ?,
+        instructions_json = ?,
+        is_active = ?,
+        updated_at = ?
+    WHERE id = ?
+  `
+  ).run(
+    displayName,
+    cleanNumber,
+    dialCode,
+    JSON.stringify(cleanedInstructions),
+    input.isActive ? 1 : 0,
+    now,
+    methodId
+  );
+
+  const updated = db
+    .prepare(`SELECT * FROM payment_settings WHERE id = ? LIMIT 1`)
+    .get(methodId) as Record<string, unknown>;
+
+  return { ok: true, setting: mapRowToPaymentSetting(updated) };
+}
+
 const findDuplicateStmt = db.prepare(`
   SELECT order_id FROM orders
   WHERE payment_method = ? AND transaction_id = ?
@@ -147,6 +393,8 @@ const findDuplicateStmt = db.prepare(`
 const insertOrderStmt = db.prepare(`
   INSERT INTO orders (
     order_id,
+    user_id,
+    invoice_ref,
     customer_name,
     product_name,
     amount,
@@ -162,13 +410,15 @@ const insertOrderStmt = db.prepare(`
     order_status,
     submitted_at,
     updated_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'Pending Verification', 'Pending', ?, ?)
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'Pending Verification', 'Pending', ?, ?)
 `);
 
 const getByOrderIdStmt = db.prepare(`
   SELECT
     id,
     order_id,
+    user_id,
+    invoice_ref,
     customer_name,
     product_name,
     amount,
@@ -205,6 +455,8 @@ export function findDuplicateTransaction(
 export function createOrder(payload: NewOrderPayload): OrderRecord {
   insertOrderStmt.run(
     payload.orderId,
+    payload.userId,
+    payload.invoiceRef,
     payload.customerName,
     payload.productName,
     payload.amount,
@@ -301,6 +553,8 @@ export function listAdminOrders(filter: AdminOrderFilter, searchQuery: string): 
     SELECT
       id,
       order_id,
+      user_id,
+      invoice_ref,
       customer_name,
       product_name,
       amount,

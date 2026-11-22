@@ -15,6 +15,8 @@ export type AdminOrderAction =
 export interface AdminOrder {
   id: number;
   orderId: string;
+  userId?: string;
+  invoiceRef?: string | null;
   customerName: string;
   productName: string;
   amount: number;

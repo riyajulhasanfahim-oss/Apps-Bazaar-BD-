@@ -9,6 +9,8 @@ export interface OrderRequestInput {
   transactionId: string;
   whatsappNumber: string;
   imoNumber?: string;
+  userId?: string;
+  invoiceRef?: string;
   paymentConfirmed: boolean;
 }
 
@@ -59,6 +61,8 @@ export function validateOrderInput(input: Partial<OrderRequestInput>): {
     transactionId: string;
     whatsappNumber: string;
     imoNumber: string | null;
+    userId: string | null;
+    invoiceRef: string | null;
     paymentConfirmed: true;
   };
 } {
@@ -70,6 +74,8 @@ export function validateOrderInput(input: Partial<OrderRequestInput>): {
   const trxRaw = typeof input.transactionId === 'string' ? input.transactionId.trim() : '';
   const whatsappRaw = typeof input.whatsappNumber === 'string' ? input.whatsappNumber.trim() : '';
   const imoRaw = typeof input.imoNumber === 'string' ? input.imoNumber.trim() : '';
+  const userIdRaw = typeof input.userId === 'string' ? input.userId.trim() : '';
+  const invoiceRefRaw = typeof input.invoiceRef === 'string' ? input.invoiceRef.trim() : '';
   const paymentConfirmed = input.paymentConfirmed === true;
 
   if (customerName.length < 2 || customerName.length > 80) {
@@ -88,9 +94,9 @@ export function validateOrderInput(input: Partial<OrderRequestInput>): {
 
   const normalizedTrx = trxRaw.toUpperCase().replace(/\s+/g, '');
   if (!normalizedTrx) {
-    errors.transactionId = 'Please enter your payment Transaction ID (TrxID).';
+    errors.transactionId = 'অনুগ্রহ করে আপনার Transaction ID লিখুন।';
   } else if (!/^[A-Z0-9_-]{5,32}$/.test(normalizedTrx)) {
-    errors.transactionId = 'Transaction ID must be 5–32 letters or digits.';
+    errors.transactionId = 'সঠিক Transaction ID দিন (৫–৩২ অক্ষর বা সংখ্যা)।';
   }
 
   if (!whatsappRaw) {
@@ -112,6 +118,11 @@ export function validateOrderInput(input: Partial<OrderRequestInput>): {
     errors.paymentConfirmed = 'Please confirm that you have completed the ৳999 payment.';
   }
 
+  const sanitizedUserId =
+    /^[A-Za-z0-9_-]{4,36}$/.test(userIdRaw) ? userIdRaw.toUpperCase() : null;
+  const sanitizedInvoiceRef =
+    /^[A-Za-z0-9_-]{4,36}$/.test(invoiceRefRaw) ? invoiceRefRaw.toUpperCase() : null;
+
   if (Object.keys(errors).length > 0 || !isValidPaymentMethod(paymentMethod)) {
     return { valid: false, errors };
   }
@@ -126,6 +137,8 @@ export function validateOrderInput(input: Partial<OrderRequestInput>): {
       transactionId: normalizedTrx,
       whatsappNumber: normalizeBdPhone(whatsappRaw),
       imoNumber: normalizedImo,
+      userId: sanitizedUserId,
+      invoiceRef: sanitizedInvoiceRef,
       paymentConfirmed: true,
     },
   };

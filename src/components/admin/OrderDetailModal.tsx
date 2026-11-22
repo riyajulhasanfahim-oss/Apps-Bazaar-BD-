@@ -247,6 +247,18 @@ export function OrderDetailModal({
               <span className="text-[#5F6368]">Customer Name</span>
               <span className="font-semibold text-[#1F1F1F]">{order.customerName}</span>
             </div>
+            {order.userId && (
+              <div className="px-4 py-2.5 flex items-center justify-between gap-2">
+                <span className="text-[#5F6368]">User ID</span>
+                <span className="font-mono font-semibold text-[#1F1F1F]">{order.userId}</span>
+              </div>
+            )}
+            {order.invoiceRef && (
+              <div className="px-4 py-2.5 flex items-center justify-between gap-2">
+                <span className="text-[#5F6368]">Invoice ID</span>
+                <span className="font-mono font-medium text-[#3C4043]">{order.invoiceRef}</span>
+              </div>
+            )}
             <div className="px-4 py-2.5 flex items-center justify-between gap-2">
               <span className="text-[#5F6368]">App / Product</span>
               <span className="font-medium text-[#1F1F1F]">{order.productName}</span>

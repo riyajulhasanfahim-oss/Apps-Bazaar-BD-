@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Search,
   ShoppingBag,
+  Wallet,
   X,
   XCircle,
 } from 'lucide-react';
@@ -22,6 +23,7 @@ import {
   type OrderSummaryStats,
 } from './AdminTypes';
 import { OrderDetailModal } from './OrderDetailModal';
+import { PaymentSettingsPanel } from './PaymentSettingsPanel';
 
 interface AdminDashboardProps {
   token: string;
@@ -57,6 +59,7 @@ export function AdminDashboard({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<AdminOrder | null>(null);
+  const [activeAdminTab, setActiveAdminTab] = useState<'orders' | 'payment_settings'>('orders');
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -209,8 +212,40 @@ export function AdminDashboard({
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-7 space-y-5">
-        {/* Summary Cards */}
-        <section aria-label="Order summary metrics" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {/* Section Switcher: Orders vs Payment Settings */}
+        <div className="inline-flex items-center gap-1.5 rounded-full bg-white border border-slate-200/85 p-1 shadow-2xs">
+          <button
+            type="button"
+            onClick={() => setActiveAdminTab('orders')}
+            className={`px-4 py-2 rounded-full text-[13px] font-display font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+              activeAdminTab === 'orders'
+                ? 'bg-[#1A73E8] text-white'
+                : 'text-[#3C4043] hover:bg-slate-100'
+            }`}
+          >
+            <ShoppingBag className="w-3.5 h-3.5" />
+            <span>Orders</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveAdminTab('payment_settings')}
+            className={`px-4 py-2 rounded-full text-[13px] font-display font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+              activeAdminTab === 'payment_settings'
+                ? 'bg-[#1A73E8] text-white'
+                : 'text-[#3C4043] hover:bg-slate-100'
+            }`}
+          >
+            <Wallet className="w-3.5 h-3.5" />
+            <span>Payment Numbers &amp; Instructions</span>
+          </button>
+        </div>
+
+        {activeAdminTab === 'payment_settings' ? (
+          <PaymentSettingsPanel token={token} onUnauthorized={onLogout} />
+        ) : (
+          <>
+            {/* Summary Cards */}
+            <section aria-label="Order summary metrics" className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {summaryCards.map((card) => {
             const Icon = card.icon;
             const isActive = filter === card.targetFilter;
@@ -474,6 +509,8 @@ export function AdminDashboard({
                 </button>
               ))}
             </div>
+          </>
+        )}
           </>
         )}
       </main>

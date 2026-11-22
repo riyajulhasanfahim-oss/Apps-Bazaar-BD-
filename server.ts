@@ -3,7 +3,7 @@ import path from 'node:path';
 import express from 'express';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
-import { validateOrderInput } from './shared/orderValidation.ts';
+import { isValidPaymentMethod, validateOrderInput } from './shared/orderValidation.ts';
 import {
   claimAdminHash,
   createOrder,
@@ -12,8 +12,10 @@ import {
   getOrderById,
   getOrderSummaryStats,
   listAdminOrders,
+  listPaymentSettings,
   transitionOrderStatus,
   updateOrderAdminNote,
+  updatePaymentSetting,
   type AdminOrderAction,
   type AdminOrderFilter,
 } from './server/db.ts';
@@ -62,6 +64,10 @@ function generateOrderId(): string {
   return `AB-${yy}${mm}${dd}-${randomCode}`;
 }
 
+function generateUserId(): string {
+  return `USR-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+}
+
 function getEnvAdminPasscode(): string {
   return typeof process.env.ADMIN_PASSCODE === 'string' ? process.env.ADMIN_PASSCODE.trim() : '';
 }
@@ -86,6 +92,17 @@ async function startServer() {
     res.json({ ok: true });
   });
 
+  // Public Payment Methods Configuration (read from SQLite — single source of truth)
+  app.get('/api/payment-methods', (_req, res) => {
+    try {
+      const methods = listPaymentSettings(true);
+      res.json({ methods });
+    } catch (err) {
+      console.error('Payment methods fetch error:', err);
+      res.status(500).json({ error: 'Unable to load payment methods.' });
+    }
+  });
+
   // Public Order Creation Route (Customer Checkout)
   app.post('/api/orders', (req, res) => {
     try {
@@ -94,7 +111,7 @@ async function startServer() {
 
       if (!validation.valid || !validation.sanitized) {
         return res.status(400).json({
-          error: 'Please check the highlighted fields and try again.',
+          error: 'অনুগ্রহ করে সব প্রয়োজনীয় তথ্য সঠিকভাবে পূরণ করুন।',
           fieldErrors: validation.errors,
         });
       }
@@ -106,12 +123,14 @@ async function startServer() {
         transactionId,
         whatsappNumber,
         imoNumber,
+        userId,
+        invoiceRef,
       } = validation.sanitized;
 
       if (findDuplicateTransaction(paymentMethod, transactionId)) {
         return res.status(409).json({
           error:
-            'This Transaction ID has already been submitted for the selected payment method. Please check your TrxID or wait for admin verification.',
+            'এই Transaction ID দিয়ে ইতিমধ্যেই একটি পেমেন্ট রিকুয়েস্ট জমা দেওয়া হয়েছে। অনুগ্রহ করে অ্যাডমিন ভেরিফিকেশনের জন্য অপেক্ষা করুন।',
           fieldErrors: {
             transactionId: 'Duplicate Transaction ID detected.',
           },
@@ -119,10 +138,13 @@ async function startServer() {
       }
 
       const orderId = generateOrderId();
+      const resolvedUserId = userId ?? generateUserId();
       const submittedAt = new Date().toISOString();
 
       const savedOrder = createOrder({
         orderId,
+        userId: resolvedUserId,
+        invoiceRef: invoiceRef ?? orderId,
         customerName,
         productName: PRODUCT_NAME,
         amount: AUTHORITATIVE_PRICE,
@@ -139,6 +161,8 @@ async function startServer() {
       return res.status(201).json({
         order: {
           orderId: savedOrder.orderId,
+          userId: savedOrder.userId,
+          invoiceRef: savedOrder.invoiceRef,
           customerName: savedOrder.customerName,
           productName: savedOrder.productName,
           amount: savedOrder.amount,
@@ -158,7 +182,7 @@ async function startServer() {
       if (message.includes('UNIQUE constraint failed')) {
         return res.status(409).json({
           error:
-            'This Transaction ID has already been submitted. Duplicate orders are not allowed.',
+            'এই Transaction ID দিয়ে ইতিমধ্যেই একটি অর্ডার জমা দেওয়া হয়েছে। ডুপ্লিকেট রিকুয়েস্ট অনুমোদিত নয়।',
           fieldErrors: {
             transactionId: 'Duplicate Transaction ID detected.',
           },
@@ -182,7 +206,7 @@ async function startServer() {
     return res.json({ mode: claimedHash ? 'claimed' : 'unclaimed' });
   });
 
-  // One-time First-Run Admin Setup (strictly locked once claimed or when ADMIN_PASSCODE env is set)
+  // One-time First-Run Admin Setup
   app.post('/api/admin/bootstrap', (req, res) => {
     const envPasscode = getEnvAdminPasscode();
     if (envPasscode.length > 0 || getClaimedAdminHash()) {
@@ -262,7 +286,6 @@ async function startServer() {
     });
   });
 
-  // Protected Admin Session Check & Logout
   app.get('/api/admin/me', requireAdmin, (_req, res) => {
     res.json({ authenticated: true, role: 'admin' });
   });
@@ -273,6 +296,47 @@ async function startServer() {
       revokeAdminToken(token);
     }
     res.json({ ok: true });
+  });
+
+  // Protected Admin Payment Settings Routes
+  app.get('/api/admin/payment-settings', requireAdmin, (_req, res) => {
+    try {
+      const settings = listPaymentSettings(false);
+      return res.json({ settings });
+    } catch (err) {
+      console.error('Admin payment settings fetch error:', err);
+      return res.status(500).json({ error: 'Failed to load payment settings.' });
+    }
+  });
+
+  app.put('/api/admin/payment-settings/:methodId', requireAdmin, (req, res) => {
+    const methodId = String(req.params.methodId ?? '').trim();
+    if (!isValidPaymentMethod(methodId)) {
+      return res.status(400).json({ error: 'Invalid payment method identifier.' });
+    }
+
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const displayName = typeof body.displayName === 'string' ? body.displayName : '';
+    const accountNumber = typeof body.accountNumber === 'string' ? body.accountNumber : '';
+    const dialCode = typeof body.dialCode === 'string' ? body.dialCode : '';
+    const instructions = Array.isArray(body.instructions)
+      ? body.instructions.map((item: unknown) => (typeof item === 'string' ? item : ''))
+      : [];
+    const isActive = body.isActive !== false;
+
+    const result = updatePaymentSetting(methodId, {
+      displayName,
+      accountNumber,
+      dialCode,
+      instructions,
+      isActive,
+    });
+
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error });
+    }
+
+    return res.json({ setting: result.setting });
   });
 
   // Protected Admin Order Management Routes

@@ -27,7 +27,7 @@ export function InteractiveModals({
   onClose,
   onChangeScreenshot,
 }: InteractiveModalsProps) {
-  const { appInfo, screenshots, videoDemo, reviews } = APP_CONTENT;
+  const { screenshots, videoDemo, reviews } = APP_CONTENT;
   const safeVideoUrl = isSafeMediaUrl(videoDemo.videoUrl) ? videoDemo.videoUrl.trim() : '';
 
   const [selectedStar, setSelectedStar] = useState<number | null>(reviewStarFilter);
@@ -54,39 +54,50 @@ export function InteractiveModals({
 
   const currentScreenshot = screenshots[screenshotIndex];
 
+  const isBuyModal = activeModal === 'buy';
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-950/55 backdrop-blur-[2px] p-0 sm:p-4"
+      className={`fixed inset-0 z-50 flex justify-center bg-slate-950/60 backdrop-blur-[2px] ${
+        isBuyModal ? 'items-center p-3 sm:p-4' : 'items-end sm:items-center p-0 sm:p-4'
+      }`}
       role="dialog"
       aria-modal="true"
       onClick={onClose}
     >
       <div
-        className="w-full sm:max-w-[460px] bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200/80 overflow-hidden max-h-[92vh] flex flex-col"
+        className={`w-full bg-white shadow-2xl border border-slate-200/85 overflow-hidden flex flex-col ${
+          isBuyModal
+            ? 'max-w-[384px] sm:max-w-[404px] rounded-2xl max-h-[90vh]'
+            : 'sm:max-w-[460px] rounded-t-3xl sm:rounded-3xl max-h-[92vh]'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sm:hidden w-10 h-1 bg-slate-300 rounded-full mx-auto mt-2.5 shrink-0" />
+        {!isBuyModal && (
+          <div className="sm:hidden w-10 h-1 bg-slate-300 rounded-full mx-auto mt-2.5 shrink-0" />
+        )}
 
-        {/* Modal Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 shrink-0">
-          <h3 className="font-display text-[16px] font-bold text-[#1F1F1F]">
-            {activeModal === 'buy' && `Buy ${appInfo.name} · ${appInfo.price}`}
-            {activeModal === 'video' && videoDemo.title}
-            {activeModal === 'screenshot' && currentScreenshot?.title}
-            {activeModal === 'reviews' && 'Ratings & Sample Reviews'}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close modal"
-            className="w-9 h-9 -mr-1.5 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+        {/* Modal Header (omitted for 'buy' so the checkout gateway renders its own top bar cleanly) */}
+        {activeModal !== 'buy' && (
+          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 shrink-0">
+            <h3 className="font-display text-[16px] font-bold text-[#1F1F1F]">
+              {activeModal === 'video' && videoDemo.title}
+              {activeModal === 'screenshot' && currentScreenshot?.title}
+              {activeModal === 'reviews' && 'Ratings & Sample Reviews'}
+            </h3>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close modal"
+              className="w-9 h-9 -mr-1.5 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        )}
 
         {/* Modal Body */}
-        <div className="p-5 overflow-y-auto">
+        <div className={activeModal === 'buy' ? 'overflow-y-auto' : 'p-5 overflow-y-auto'}>
           {activeModal === 'buy' && <BuyNowModal onClose={onClose} />}
 
           {/* VIDEO DEMO MODAL */}
