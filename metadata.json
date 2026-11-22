@@ -1,0 +1,6 @@
+{
+  "name": "Ad Earning — Apps Bazaar",
+  "description": "Mobile-first Google Play Store style app listing page for Ad Earning by Apps Bazaar.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
