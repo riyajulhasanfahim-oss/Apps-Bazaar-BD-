@@ -4,9 +4,11 @@ import {
   ArrowLeft,
   CheckCircle2,
   Clock,
+  Film,
   Inbox,
   Loader2,
   LogOut,
+  PlayCircle,
   RefreshCw,
   Search,
   ShoppingBag,
@@ -22,8 +24,10 @@ import {
   type AdminOrderFilter,
   type OrderSummaryStats,
 } from './AdminTypes';
+import { DemoVideoManager } from './DemoVideoManager';
 import { OrderDetailModal } from './OrderDetailModal';
 import { PaymentSettingsPanel } from './PaymentSettingsPanel';
+import { ShortsVideoManager } from './ShortsVideoManager';
 
 interface AdminDashboardProps {
   token: string;
@@ -59,7 +63,9 @@ export function AdminDashboard({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedOrder, setSelectedOrder] = useState<AdminOrder | null>(null);
-  const [activeAdminTab, setActiveAdminTab] = useState<'orders' | 'payment_settings'>('orders');
+  const [activeAdminTab, setActiveAdminTab] = useState<
+    'orders' | 'payment_settings' | 'shorts_videos' | 'demo_video'
+  >('orders');
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -212,12 +218,12 @@ export function AdminDashboard({
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-7 space-y-5">
-        {/* Section Switcher: Orders vs Payment Settings */}
-        <div className="inline-flex items-center gap-1.5 rounded-full bg-white border border-slate-200/85 p-1 shadow-2xs">
+        {/* Section Switcher */}
+        <div className="flex flex-wrap items-center gap-1.5 rounded-2xl bg-white border border-slate-200/85 p-1.5 shadow-2xs w-fit max-w-full">
           <button
             type="button"
             onClick={() => setActiveAdminTab('orders')}
-            className={`px-4 py-2 rounded-full text-[13px] font-display font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+            className={`px-3.5 py-2 rounded-xl text-[12.5px] font-display font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
               activeAdminTab === 'orders'
                 ? 'bg-[#1A73E8] text-white'
                 : 'text-[#3C4043] hover:bg-slate-100'
@@ -229,7 +235,7 @@ export function AdminDashboard({
           <button
             type="button"
             onClick={() => setActiveAdminTab('payment_settings')}
-            className={`px-4 py-2 rounded-full text-[13px] font-display font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+            className={`px-3.5 py-2 rounded-xl text-[12.5px] font-display font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
               activeAdminTab === 'payment_settings'
                 ? 'bg-[#1A73E8] text-white'
                 : 'text-[#3C4043] hover:bg-slate-100'
@@ -238,10 +244,38 @@ export function AdminDashboard({
             <Wallet className="w-3.5 h-3.5" />
             <span>Payment Numbers &amp; Instructions</span>
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveAdminTab('shorts_videos')}
+            className={`px-3.5 py-2 rounded-xl text-[12.5px] font-display font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+              activeAdminTab === 'shorts_videos'
+                ? 'bg-[#1A73E8] text-white'
+                : 'text-[#3C4043] hover:bg-slate-100'
+            }`}
+          >
+            <Film className="w-3.5 h-3.5" />
+            <span>App Screenshots (Shorts)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveAdminTab('demo_video')}
+            className={`px-3.5 py-2 rounded-xl text-[12.5px] font-display font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+              activeAdminTab === 'demo_video'
+                ? 'bg-[#1A73E8] text-white'
+                : 'text-[#3C4043] hover:bg-slate-100'
+            }`}
+          >
+            <PlayCircle className="w-3.5 h-3.5" />
+            <span>Video Demo &amp; Review</span>
+          </button>
         </div>
 
         {activeAdminTab === 'payment_settings' ? (
           <PaymentSettingsPanel token={token} onUnauthorized={onLogout} />
+        ) : activeAdminTab === 'shorts_videos' ? (
+          <ShortsVideoManager token={token} onUnauthorized={onLogout} />
+        ) : activeAdminTab === 'demo_video' ? (
+          <DemoVideoManager token={token} onUnauthorized={onLogout} />
         ) : (
           <>
             {/* Summary Cards */}

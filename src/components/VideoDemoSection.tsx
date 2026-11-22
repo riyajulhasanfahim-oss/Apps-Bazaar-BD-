@@ -1,16 +1,28 @@
+import { useState } from 'react';
 import { ChevronRight, Play } from 'lucide-react';
 import { APP_CONTENT, isSafeMediaUrl } from '../data/appContent';
+import type { DemoVideoItem } from '../../shared/youtube';
 
 interface VideoDemoSectionProps {
+  demoVideo?: DemoVideoItem | null;
   onOpenVideo: () => void;
 }
 
-export function VideoDemoSection({ onOpenVideo }: VideoDemoSectionProps) {
+export function VideoDemoSection({ demoVideo = null, onOpenVideo }: VideoDemoSectionProps) {
   const { sectionTitle, title, description, badgeLabel, videoUrl } = APP_CONTENT.videoDemo;
+  const [thumbFailed, setThumbFailed] = useState(false);
+
+  const displayTitle = demoVideo?.title?.trim() || title;
+  const displayDescription = demoVideo?.description?.trim() || description;
+  const customThumbnail =
+    demoVideo?.thumbnailUrl && isSafeMediaUrl(demoVideo.thumbnailUrl) && !thumbFailed
+      ? demoVideo.thumbnailUrl.trim()
+      : '';
+
   const safeVideoUrl = isSafeMediaUrl(videoUrl) ? videoUrl.trim() : '';
-  const isDirectVideo = Boolean(
-    safeVideoUrl && (safeVideoUrl.endsWith('.mp4') || safeVideoUrl.endsWith('.webm'))
-  );
+  const isDirectVideo =
+    !demoVideo &&
+    Boolean(safeVideoUrl && (safeVideoUrl.endsWith('.mp4') || safeVideoUrl.endsWith('.webm')));
 
   return (
     <section aria-labelledby="video-demo-heading">
@@ -42,11 +54,31 @@ export function VideoDemoSection({ onOpenVideo }: VideoDemoSectionProps) {
             className="w-full h-full object-cover"
           />
         </div>
+      ) : customThumbnail ? (
+        <button
+          type="button"
+          onClick={onOpenVideo}
+          aria-label={`${badgeLabel}: ${displayTitle}`}
+          className="group relative w-full aspect-video max-h-[210px] rounded-2xl overflow-hidden bg-slate-950 shadow-[0_8px_22px_rgba(21,101,216,0.22)] border border-slate-200/80 text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A73E8]"
+        >
+          <img
+            src={customThumbnail}
+            alt={displayTitle}
+            referrerPolicy="no-referrer"
+            onError={() => setThumbFailed(true)}
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-slate-950/20 group-hover:bg-slate-950/30 transition-colors flex items-center justify-center pointer-events-none">
+            <div className="w-12 h-12 sm:w-13 sm:h-13 rounded-full bg-slate-950/65 backdrop-blur-sm border border-white/50 flex items-center justify-center text-white shadow-[0_6px_18px_rgba(0,0,0,0.35)] transition-transform duration-150 group-hover:scale-110">
+              <Play className="w-5 h-5 fill-white text-white ml-0.5" aria-hidden="true" />
+            </div>
+          </div>
+        </button>
       ) : (
         <button
           type="button"
           onClick={onOpenVideo}
-          aria-label={`${badgeLabel}: ${title}`}
+          aria-label={`${badgeLabel}: ${displayTitle}`}
           className="group relative w-full h-[120px] sm:h-[138px] rounded-2xl overflow-hidden bg-gradient-to-r from-[#0A3A8A] via-[#1565D8] to-[#0E4AB2] shadow-[0_8px_22px_rgba(21,101,216,0.24)] border border-blue-700/20 text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A73E8]"
         >
           <div className="pointer-events-none absolute -left-8 -top-10 w-44 h-44 rounded-full bg-cyan-400/20 blur-2xl" />
@@ -97,10 +129,10 @@ export function VideoDemoSection({ onOpenVideo }: VideoDemoSectionProps) {
       {/* Video Title & Short Video Description */}
       <div className="mt-2.5">
         <h3 className="font-display text-[14px] sm:text-[14.5px] font-semibold text-[#1F1F1F] leading-snug">
-          {title}
+          {displayTitle}
         </h3>
         <p className="mt-0.5 text-[12.5px] sm:text-[13px] leading-relaxed text-[#5F6368]">
-          {description}
+          {displayDescription}
         </p>
       </div>
     </section>

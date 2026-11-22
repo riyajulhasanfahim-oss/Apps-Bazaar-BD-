@@ -1,41 +1,59 @@
-import { useRef, useState, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Smartphone } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Play, Smartphone } from 'lucide-react';
 import { APP_CONTENT } from '../data/appContent';
+import type { ShortVideoItem } from '../../shared/youtube';
 
 interface AppScreenshotsProps {
+  shorts?: ShortVideoItem[];
   onSelectScreenshot: (index: number) => void;
+  onSelectShort: (index: number) => void;
 }
 
-export function AppScreenshots({ onSelectScreenshot }: AppScreenshotsProps) {
-  const screenshots = APP_CONTENT.screenshots;
+export function AppScreenshots({
+  shorts = [],
+  onSelectScreenshot,
+  onSelectShort,
+}: AppScreenshotsProps) {
+  const usingShorts = shorts.length > 0;
+  const items = usingShorts
+    ? shorts.map((s) => ({
+        id: s.id,
+        title: s.title,
+        alt: s.title,
+        imageUrl: s.thumbnailUrl,
+      }))
+    : APP_CONTENT.screenshots;
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(true);
   const [activeDot, setActiveDot] = useState(0);
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
 
-  const updateScrollState = () => {
+  const updateScrollState = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     setCanScrollLeft(el.scrollLeft > 8);
     setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 8);
 
     const maxScroll = el.scrollWidth - el.clientWidth;
-    if (maxScroll > 0) {
+    if (maxScroll > 0 && items.length > 1) {
       const ratio = el.scrollLeft / maxScroll;
       const index = Math.min(
-        screenshots.length - 1,
-        Math.max(0, Math.round(ratio * (screenshots.length - 1)))
+        items.length - 1,
+        Math.max(0, Math.round(ratio * (items.length - 1)))
       );
       setActiveDot(index);
+    } else {
+      setActiveDot(0);
     }
-  };
+  }, [items.length]);
 
   useEffect(() => {
     updateScrollState();
     window.addEventListener('resize', updateScrollState);
     return () => window.removeEventListener('resize', updateScrollState);
-  }, []);
+  }, [updateScrollState]);
 
   const scrollByAmount = (direction: 'left' | 'right') => {
     const el = scrollRef.current;
@@ -48,8 +66,7 @@ export function AppScreenshots({ onSelectScreenshot }: AppScreenshotsProps) {
     const el = scrollRef.current;
     if (!el) return;
     const maxScroll = el.scrollWidth - el.clientWidth;
-    const targetLeft =
-      screenshots.length > 1 ? (index / (screenshots.length - 1)) * maxScroll : 0;
+    const targetLeft = items.length > 1 ? (index / (items.length - 1)) * maxScroll : 0;
     el.scrollTo({ left: targetLeft, behavior: 'smooth' });
   };
 
@@ -78,14 +95,20 @@ export function AppScreenshots({ onSelectScreenshot }: AppScreenshotsProps) {
           onScroll={updateScrollState}
           className="flex gap-3 overflow-x-auto scroll-smooth snap-x snap-mandatory no-scrollbar pb-1"
         >
-          {screenshots.map((item, index) => {
+          {items.map((item, index) => {
             const hasFailed = failedImages[item.id];
             return (
               <button
                 key={item.id}
                 type="button"
-                onClick={() => onSelectScreenshot(index)}
-                aria-label={`Preview ${item.title} screenshot`}
+                onClick={() =>
+                  usingShorts ? onSelectShort(index) : onSelectScreenshot(index)
+                }
+                aria-label={
+                  usingShorts
+                    ? `Play ${item.title} YouTube Short`
+                    : `Preview ${item.title} screenshot`
+                }
                 className="group relative shrink-0 w-[138px] sm:w-[152px] aspect-[9/16] rounded-[18px] overflow-hidden bg-[#091326] border border-slate-900/15 shadow-[0_6px_16px_rgba(15,23,42,0.12)] snap-start transition-transform duration-150 hover:-translate-y-0.5 active:scale-[0.98] cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#1A73E8]"
               >
                 {!hasFailed ? (
@@ -97,7 +120,9 @@ export function AppScreenshots({ onSelectScreenshot }: AppScreenshotsProps) {
                     onError={() =>
                       setFailedImages((prev) => ({ ...prev, [item.id]: true }))
                     }
-                    className="w-full h-full object-cover scale-[1.13] select-none pointer-events-none"
+                    className={`w-full h-full object-cover select-none pointer-events-none ${
+                      usingShorts ? '' : 'scale-[1.13]'
+                    }`}
                   />
                 ) : (
                   <div className="w-full h-full bg-gradient-to-b from-[#0D1E42] to-[#081226] text-white p-3 flex flex-col items-center justify-center text-center">
@@ -105,6 +130,14 @@ export function AppScreenshots({ onSelectScreenshot }: AppScreenshotsProps) {
                     <span className="text-[11px] font-semibold leading-snug">
                       {item.title}
                     </span>
+                  </div>
+                )}
+
+                {usingShorts && (
+                  <div className="absolute inset-0 bg-slate-950/15 group-hover:bg-slate-950/25 transition-colors flex items-center justify-center pointer-events-none">
+                    <div className="w-10 h-10 rounded-full bg-slate-950/65 backdrop-blur-xs border border-white/50 flex items-center justify-center text-white shadow-md transition-transform duration-150 group-hover:scale-110">
+                      <Play className="w-4 h-4 fill-white text-white ml-0.5" aria-hidden="true" />
+                    </div>
                   </div>
                 )}
               </button>
@@ -139,7 +172,7 @@ export function AppScreenshots({ onSelectScreenshot }: AppScreenshotsProps) {
 
       {/* Subtle Scroll Indicator Dots */}
       <div className="mt-2.5 flex items-center justify-center gap-1.5" aria-hidden="true">
-        {screenshots.map((item, idx) => (
+        {items.map((item, idx) => (
           <button
             key={item.id}
             type="button"

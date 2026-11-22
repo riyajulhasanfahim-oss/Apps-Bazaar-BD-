@@ -8,14 +8,21 @@ import {
   X,
 } from 'lucide-react';
 import { APP_CONTENT, isSafeMediaUrl } from '../data/appContent';
+import {
+  getYouTubeEmbedUrl,
+  type DemoVideoItem,
+  type ShortVideoItem,
+} from '../../shared/youtube';
 import { BuyNowModal } from './BuyNowModal';
 
-export type ModalType = 'buy' | 'video' | 'screenshot' | 'reviews' | null;
+export type ModalType = 'buy' | 'video' | 'screenshot' | 'short' | 'reviews' | null;
 
 interface InteractiveModalsProps {
   activeModal: ModalType;
   screenshotIndex: number;
   reviewStarFilter: number | null;
+  shorts?: ShortVideoItem[];
+  demoVideo?: DemoVideoItem | null;
   onClose: () => void;
   onChangeScreenshot: (index: number) => void;
 }
@@ -24,11 +31,19 @@ export function InteractiveModals({
   activeModal,
   screenshotIndex,
   reviewStarFilter,
+  shorts = [],
+  demoVideo = null,
   onClose,
   onChangeScreenshot,
 }: InteractiveModalsProps) {
   const { screenshots, videoDemo, reviews } = APP_CONTENT;
-  const safeVideoUrl = isSafeMediaUrl(videoDemo.videoUrl) ? videoDemo.videoUrl.trim() : '';
+
+  const customDemoEmbedUrl = demoVideo?.youtubeUrl
+    ? getYouTubeEmbedUrl(demoVideo.youtubeUrl, true)
+    : null;
+  const fallbackVideoUrl = isSafeMediaUrl(videoDemo.videoUrl) ? videoDemo.videoUrl.trim() : '';
+  const activeDemoTitle = demoVideo?.title?.trim() || videoDemo.title;
+  const activeDemoDescription = demoVideo?.description?.trim() || videoDemo.description;
 
   const [selectedStar, setSelectedStar] = useState<number | null>(reviewStarFilter);
   const [lightboxImageFailed, setLightboxImageFailed] = useState<Record<string, boolean>>({});
@@ -53,6 +68,10 @@ export function InteractiveModals({
     : reviews.items;
 
   const currentScreenshot = screenshots[screenshotIndex];
+  const currentShort = shorts[screenshotIndex];
+  const currentShortEmbedUrl = currentShort?.youtubeUrl
+    ? getYouTubeEmbedUrl(currentShort.youtubeUrl, true)
+    : null;
 
   const isBuyModal = activeModal === 'buy';
 
@@ -80,16 +99,17 @@ export function InteractiveModals({
         {/* Modal Header (omitted for 'buy' so the checkout gateway renders its own top bar cleanly) */}
         {activeModal !== 'buy' && (
           <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 shrink-0">
-            <h3 className="font-display text-[16px] font-bold text-[#1F1F1F]">
-              {activeModal === 'video' && videoDemo.title}
+            <h3 className="font-display text-[16px] font-bold text-[#1F1F1F] truncate pr-2">
+              {activeModal === 'video' && activeDemoTitle}
               {activeModal === 'screenshot' && currentScreenshot?.title}
+              {activeModal === 'short' && (currentShort?.title || 'App Preview Short')}
               {activeModal === 'reviews' && 'Ratings & Sample Reviews'}
             </h3>
             <button
               type="button"
               onClick={onClose}
               aria-label="Close modal"
-              className="w-9 h-9 -mr-1.5 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer"
+              className="w-9 h-9 -mr-1.5 rounded-full flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors cursor-pointer shrink-0"
             >
               <X className="w-5 h-5" />
             </button>
@@ -100,14 +120,25 @@ export function InteractiveModals({
         <div className={activeModal === 'buy' ? 'overflow-y-auto' : 'p-5 overflow-y-auto'}>
           {activeModal === 'buy' && <BuyNowModal onClose={onClose} />}
 
-          {/* VIDEO DEMO MODAL */}
+          {/* LONG VIDEO DEMO MODAL */}
           {activeModal === 'video' && (
             <div className="space-y-4">
-              {safeVideoUrl ? (
+              {customDemoEmbedUrl ? (
                 <div className="w-full aspect-video rounded-2xl overflow-hidden bg-slate-950 border border-slate-200">
-                  {safeVideoUrl.endsWith('.mp4') || safeVideoUrl.endsWith('.webm') ? (
+                  <iframe
+                    src={customDemoEmbedUrl}
+                    title={activeDemoTitle}
+                    className="w-full h-full border-0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    referrerPolicy="strict-origin-when-cross-origin"
+                    allowFullScreen
+                  />
+                </div>
+              ) : fallbackVideoUrl ? (
+                <div className="w-full aspect-video rounded-2xl overflow-hidden bg-slate-950 border border-slate-200">
+                  {fallbackVideoUrl.endsWith('.mp4') || fallbackVideoUrl.endsWith('.webm') ? (
                     <video
-                      src={safeVideoUrl}
+                      src={fallbackVideoUrl}
                       controls
                       autoPlay
                       playsInline
@@ -115,9 +146,9 @@ export function InteractiveModals({
                     />
                   ) : (
                     <iframe
-                      src={safeVideoUrl}
-                      title={videoDemo.title}
-                      className="w-full h-full"
+                      src={fallbackVideoUrl}
+                      title={activeDemoTitle}
+                      className="w-full h-full border-0"
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                       allowFullScreen
                     />
@@ -128,22 +159,78 @@ export function InteractiveModals({
                   <div className="w-12 h-12 rounded-full bg-white/15 border border-white/30 flex items-center justify-center mb-3">
                     <Film className="w-5 h-5 text-white" aria-hidden="true" />
                   </div>
-                  <div className="font-display text-[15px] font-bold">{videoDemo.title}</div>
+                  <div className="font-display text-[15px] font-bold">{activeDemoTitle}</div>
                   <p className="mt-1.5 text-[12.5px] text-blue-100/90 max-w-[300px] leading-relaxed">
-                    Video container is ready. Add a real video URL in the app content
-                    configuration when available.
+                    Video container is ready. Configure a YouTube Video URL in the Admin Panel to
+                    play your walkthrough here.
                   </p>
                 </div>
               )}
 
               <div>
                 <h4 className="font-display text-[14px] font-semibold text-[#1F1F1F]">
-                  {videoDemo.title}
+                  {activeDemoTitle}
                 </h4>
                 <p className="mt-1 text-[13px] leading-relaxed text-[#4B5563]">
-                  {videoDemo.description}
+                  {activeDemoDescription}
                 </p>
               </div>
+            </div>
+          )}
+
+          {/* YOUTUBE SHORTS VERTICAL PLAYER POPUP */}
+          {activeModal === 'short' && currentShort && (
+            <div className="flex flex-col items-center">
+              <div className="relative flex items-center justify-center gap-2.5 w-full">
+                {shorts.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onChangeScreenshot((screenshotIndex - 1 + shorts.length) % shorts.length)
+                    }
+                    aria-label="Previous Short"
+                    className="w-9 h-9 rounded-full border border-slate-200 bg-white flex items-center justify-center text-slate-700 hover:bg-slate-50 cursor-pointer shrink-0"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                )}
+
+                <div className="w-[240px] sm:w-[270px] aspect-[9/16] rounded-[22px] overflow-hidden bg-slate-950 border border-slate-900/20 shadow-xl">
+                  {currentShortEmbedUrl ? (
+                    <iframe
+                      key={currentShort.id}
+                      src={currentShortEmbedUrl}
+                      title={currentShort.title}
+                      className="w-full h-full border-0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      referrerPolicy="strict-origin-when-cross-origin"
+                      allowFullScreen
+                    />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center text-white p-4 text-center">
+                      <Film className="w-8 h-8 text-blue-300 mb-2" />
+                      <span className="text-[13px] font-semibold">Invalid YouTube URL</span>
+                    </div>
+                  )}
+                </div>
+
+                {shorts.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => onChangeScreenshot((screenshotIndex + 1) % shorts.length)}
+                    aria-label="Next Short"
+                    className="w-9 h-9 rounded-full border border-slate-200 bg-white flex items-center justify-center text-slate-700 hover:bg-slate-50 cursor-pointer shrink-0"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                )}
+              </div>
+
+              {shorts.length > 1 && (
+                <div className="mt-3 text-[12px] text-[#5F6368] tabular-nums">
+                  {screenshotIndex + 1} of {shorts.length}
+                </div>
+              )}
             </div>
           )}
 

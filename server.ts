@@ -11,8 +11,11 @@ import {
   getClaimedAdminHash,
   getOrderById,
   getOrderSummaryStats,
+  getVideoContent,
   listAdminOrders,
   listPaymentSettings,
+  saveDemoVideo,
+  saveShortsVideos,
   transitionOrderStatus,
   updateOrderAdminNote,
   updatePaymentSetting,
@@ -410,6 +413,57 @@ async function startServer() {
     }
 
     return res.json({ order: result.order });
+  });
+
+  // Public Video Content Route (YouTube Shorts & Demo Long Video)
+  app.get('/api/videos', (_req, res) => {
+    try {
+      const content = getVideoContent();
+      return res.json({
+        shorts: content.shorts,
+        demoVideo: content.demoVideo,
+      });
+    } catch (err) {
+      console.error('Public videos fetch error:', err);
+      return res.status(500).json({ error: 'Failed to load video settings.' });
+    }
+  });
+
+  // Protected Admin Video Management Routes
+  app.get('/api/admin/videos', requireAdmin, (_req, res) => {
+    try {
+      const content = getVideoContent();
+      return res.json(content);
+    } catch (err) {
+      console.error('Admin videos fetch error:', err);
+      return res.status(500).json({ error: 'Failed to load video settings.' });
+    }
+  });
+
+  app.put('/api/admin/videos/shorts', requireAdmin, (req, res) => {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const result = saveShortsVideos((body as Record<string, unknown>).shorts);
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error });
+    }
+    return res.json({ shorts: result.shorts });
+  });
+
+  app.put('/api/admin/videos/demo', requireAdmin, (req, res) => {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const result = saveDemoVideo((body as Record<string, unknown>).demoVideo);
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error });
+    }
+    return res.json({ demoVideo: result.demoVideo });
+  });
+
+  app.delete('/api/admin/videos/demo', requireAdmin, (_req, res) => {
+    const result = saveDemoVideo(null);
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error });
+    }
+    return res.json({ demoVideo: null });
   });
 
   app.use('/api', (_req, res) => {

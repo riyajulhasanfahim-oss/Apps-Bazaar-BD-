@@ -6,6 +6,13 @@ import {
   normalizeBdPhone,
   type PaymentMethodName,
 } from '../shared/orderValidation.ts';
+import { DEFAULT_PAYMENT_METHODS } from '../shared/paymentMethods.ts';
+import {
+  extractYouTubeVideoId,
+  isValidMediaImageUrl,
+  type DemoVideoItem,
+  type ShortVideoItem,
+} from '../shared/youtube.ts';
 
 export type PaymentStatus = 'Pending Verification' | 'Approved' | 'Rejected';
 export type OrderStatus = 'Pending' | 'Approved' | 'Processing' | 'Completed' | 'Rejected';
@@ -136,6 +143,13 @@ db.exec(`
     is_active INTEGER NOT NULL DEFAULT 1,
     updated_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS video_content_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    shorts_json TEXT NOT NULL DEFAULT '[]',
+    demo_video_json TEXT,
+    updated_at TEXT NOT NULL
+  );
 `);
 
 // Safe additive migrations for existing databases
@@ -152,79 +166,6 @@ if (!existingCols.has('invoice_ref')) {
 }
 
 // Seed default configurable payment methods only if missing (preserves Admin edits)
-const DEFAULT_PAYMENT_SETTINGS: Array<{
-  id: PaymentMethodName;
-  displayName: string;
-  accountNumber: string;
-  dialCode: string;
-  brandColor: string;
-  instructions: string[];
-}> = [
-  {
-    id: 'bKash',
-    displayName: 'bKash Personal',
-    accountNumber: '01864670673',
-    dialCode: '*247#',
-    brandColor: '#E2136E',
-    instructions: [
-      '*247# ডায়াল করে আপনার BKASH মোবাইল মেনুতে যান অথবা BKASH অ্যাপে যান।',
-      '"Send Money" -এ ক্লিক করুন।',
-      'প্রাপক নম্বর হিসেবে প্রদর্শিত নম্বরে টাকা পাঠান।',
-      'সঠিক পরিমাণ (৳999.00) টাকা পাঠান।',
-      'নিশ্চিত করতে এখন আপনার BKASH মোবাইল মেনু পিন লিখুন।',
-      'সবকিছু ঠিক থাকলে, আপনি BKASH থেকে একটি নিশ্চিতকরণ বার্তা পাবেন।',
-      'এখন উপরের বক্সে আপনার Transaction ID দিন এবং নিচের Request Now বাটনে ক্লিক করুন।',
-    ],
-  },
-  {
-    id: 'Nagad',
-    displayName: 'Nagad Personal',
-    accountNumber: '01864670673',
-    dialCode: '*167#',
-    brandColor: '#F7941D',
-    instructions: [
-      '*167# ডায়াল করে আপনার NAGAD মোবাইল মেনুতে যান অথবা NAGAD অ্যাপে যান।',
-      '"Send Money" -এ ক্লিক করুন।',
-      'প্রাপক নম্বর হিসেবে প্রদর্শিত নম্বরে টাকা পাঠান।',
-      'সঠিক পরিমাণ (৳999.00) টাকা পাঠান।',
-      'নিশ্চিত করতে এখন আপনার NAGAD মোবাইল মেনু পিন লিখুন।',
-      'সবকিছু ঠিক থাকলে, আপনি NAGAD থেকে একটি নিশ্চিতকরণ বার্তা পাবেন।',
-      'এখন উপরের বক্সে আপনার Transaction ID দিন এবং নিচের Request Now বাটনে ক্লিক করুন।',
-    ],
-  },
-  {
-    id: 'Rocket',
-    displayName: 'Rocket Personal',
-    accountNumber: '01864670673',
-    dialCode: '*322#',
-    brandColor: '#8C3494',
-    instructions: [
-      '*322# ডায়াল করে আপনার ROCKET মোবাইল মেনুতে যান অথবা ROCKET অ্যাপে যান।',
-      '"Send Money" -এ ক্লিক করুন।',
-      'প্রাপক নম্বর হিসেবে প্রদর্শিত নম্বরে টাকা পাঠান।',
-      'সঠিক পরিমাণ (৳999.00) টাকা পাঠান।',
-      'নিশ্চিত করতে এখন আপনার ROCKET মোবাইল মেনু পিন লিখুন।',
-      'সবকিছু ঠিক থাকলে, আপনি ROCKET থেকে একটি নিশ্চিতকরণ বার্তা পাবেন।',
-      'এখন উপরের বক্সে আপনার Transaction ID দিন এবং নিচের Request Now বাটনে ক্লিক করুন।',
-    ],
-  },
-  {
-    id: 'Upay',
-    displayName: 'Upay Personal',
-    accountNumber: '01864670673',
-    dialCode: '*268#',
-    brandColor: '#00A5A8',
-    instructions: [
-      '*268# ডায়াল করে আপনার UPAY মোবাইল মেনুতে যান অথবা UPAY অ্যাপে যান।',
-      '"Send Money" -এ ক্লিক করুন।',
-      'প্রাপক নম্বর হিসেবে প্রদর্শিত নম্বরে টাকা পাঠান।',
-      'সঠিক পরিমাণ (৳999.00) টাকা পাঠান।',
-      'নিশ্চিত করতে এখন আপনার UPAY মোবাইল মেনু পিন লিখুন।',
-      'সবকিছু ঠিক থাকলে, আপনি UPAY থেকে একটি নিশ্চিতকরণ বার্তা পাবেন।',
-      'এখন উপরের বক্সে আপনার Transaction ID দিন এবং নিচের Request Now বাটনে ক্লিক করুন।',
-    ],
-  },
-];
 
 const seedPaymentStmt = db.prepare(`
   INSERT OR IGNORE INTO payment_settings (
@@ -233,7 +174,7 @@ const seedPaymentStmt = db.prepare(`
 `);
 
 const seedTime = new Date().toISOString();
-for (const method of DEFAULT_PAYMENT_SETTINGS) {
+for (const method of DEFAULT_PAYMENT_METHODS) {
   seedPaymentStmt.run(
     method.id,
     method.displayName,
@@ -757,3 +698,181 @@ export function updateOrderAdminNote(
 
   return { ok: true, order: updated };
 }
+
+/* -------------------------------------------------------------------------- */
+/* Video Content Settings (App Screenshots YouTube Shorts + Demo Long Video)  */
+/* -------------------------------------------------------------------------- */
+
+function ensureVideoSettingsRow(): void {
+  db.prepare(
+    `INSERT OR IGNORE INTO video_content_settings (id, shorts_json, demo_video_json, updated_at) VALUES (1, '[]', NULL, ?)`
+  ).run(new Date().toISOString());
+}
+
+export function getVideoContent(): {
+  shorts: ShortVideoItem[];
+  demoVideo: DemoVideoItem | null;
+  updatedAt: string | null;
+} {
+  ensureVideoSettingsRow();
+  const row = db
+    .prepare(`SELECT shorts_json, demo_video_json, updated_at FROM video_content_settings WHERE id = 1 LIMIT 1`)
+    .get() as { shorts_json: string; demo_video_json: string | null; updated_at: string } | undefined;
+
+  let shorts: ShortVideoItem[] = [];
+  if (row?.shorts_json) {
+    try {
+      const parsed = JSON.parse(row.shorts_json);
+      if (Array.isArray(parsed)) {
+        shorts = parsed.filter(
+          (item): item is ShortVideoItem =>
+            Boolean(item) &&
+            typeof item.id === 'string' &&
+            typeof item.thumbnailUrl === 'string' &&
+            typeof item.youtubeUrl === 'string'
+        );
+      }
+    } catch {
+      shorts = [];
+    }
+  }
+
+  let demoVideo: DemoVideoItem | null = null;
+  if (row?.demo_video_json) {
+    try {
+      const parsed = JSON.parse(row.demo_video_json);
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        typeof parsed.thumbnailUrl === 'string' &&
+        typeof parsed.youtubeUrl === 'string'
+      ) {
+        demoVideo = {
+          title: typeof parsed.title === 'string' ? parsed.title : '',
+          description: typeof parsed.description === 'string' ? parsed.description : '',
+          thumbnailUrl: parsed.thumbnailUrl,
+          youtubeUrl: parsed.youtubeUrl,
+        };
+      }
+    } catch {
+      demoVideo = null;
+    }
+  }
+
+  return {
+    shorts,
+    demoVideo,
+    updatedAt: row?.updated_at ?? null,
+  };
+}
+
+export function saveShortsVideos(
+  rawItems: unknown
+): { ok: true; shorts: ShortVideoItem[] } | { ok: false; status: number; error: string } {
+  if (!Array.isArray(rawItems)) {
+    return { ok: false, status: 400, error: 'Invalid shorts list payload.' };
+  }
+
+  if (rawItems.length > 20) {
+    return { ok: false, status: 400, error: 'You can add up to 20 Shorts videos.' };
+  }
+
+  const sanitized: ShortVideoItem[] = [];
+  for (let i = 0; i < rawItems.length; i += 1) {
+    const item = rawItems[i];
+    if (!item || typeof item !== 'object') {
+      return { ok: false, status: 400, error: `Invalid item at position ${i + 1}.` };
+    }
+    const obj = item as Record<string, unknown>;
+    const rawId = typeof obj.id === 'string' ? obj.id.trim() : '';
+    const title = typeof obj.title === 'string' ? obj.title.trim().slice(0, 80) : '';
+    const thumbnailUrl = typeof obj.thumbnailUrl === 'string' ? obj.thumbnailUrl.trim() : '';
+    const youtubeUrl = typeof obj.youtubeUrl === 'string' ? obj.youtubeUrl.trim() : '';
+
+    if (!isValidMediaImageUrl(thumbnailUrl)) {
+      return {
+        ok: false,
+        status: 400,
+        error: `Short #${i + 1}: Please enter a valid Thumbnail Image URL (https:// or /...).`,
+      };
+    }
+
+    if (!extractYouTubeVideoId(youtubeUrl)) {
+      return {
+        ok: false,
+        status: 400,
+        error: `Short #${i + 1}: Please enter a valid YouTube Shorts or Video URL.`,
+      };
+    }
+
+    const safeId = /^[A-Za-z0-9_-]{3,40}$/.test(rawId) ? rawId : `short-${Date.now()}-${i + 1}`;
+    sanitized.push({
+      id: safeId,
+      title: title || `App Short #${i + 1}`,
+      thumbnailUrl,
+      youtubeUrl,
+    });
+  }
+
+  ensureVideoSettingsRow();
+  const now = new Date().toISOString();
+  db.prepare(
+    `UPDATE video_content_settings SET shorts_json = ?, updated_at = ? WHERE id = 1`
+  ).run(JSON.stringify(sanitized), now);
+
+  return { ok: true, shorts: sanitized };
+}
+
+export function saveDemoVideo(
+  rawInput: unknown
+): { ok: true; demoVideo: DemoVideoItem | null } | { ok: false; status: number; error: string } {
+  ensureVideoSettingsRow();
+  const now = new Date().toISOString();
+
+  if (rawInput === null) {
+    db.prepare(
+      `UPDATE video_content_settings SET demo_video_json = NULL, updated_at = ? WHERE id = 1`
+    ).run(now);
+    return { ok: true, demoVideo: null };
+  }
+
+  if (!rawInput || typeof rawInput !== 'object') {
+    return { ok: false, status: 400, error: 'Invalid demo video payload.' };
+  }
+
+  const obj = rawInput as Record<string, unknown>;
+  const title = typeof obj.title === 'string' ? obj.title.trim().slice(0, 120) : '';
+  const description = typeof obj.description === 'string' ? obj.description.trim().slice(0, 300) : '';
+  const thumbnailUrl = typeof obj.thumbnailUrl === 'string' ? obj.thumbnailUrl.trim() : '';
+  const youtubeUrl = typeof obj.youtubeUrl === 'string' ? obj.youtubeUrl.trim() : '';
+
+  if (!isValidMediaImageUrl(thumbnailUrl)) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Please enter a valid Thumbnail Image URL (https:// or /...).',
+    };
+  }
+
+  if (!extractYouTubeVideoId(youtubeUrl)) {
+    return {
+      ok: false,
+      status: 400,
+      error: 'Please enter a valid YouTube Video URL.',
+    };
+  }
+
+  const sanitized: DemoVideoItem = {
+    title,
+    description,
+    thumbnailUrl,
+    youtubeUrl,
+  };
+
+  db.prepare(
+    `UPDATE video_content_settings SET demo_video_json = ?, updated_at = ? WHERE id = 1`
+  ).run(JSON.stringify(sanitized), now);
+
+  return { ok: true, demoVideo: sanitized };
+}
+

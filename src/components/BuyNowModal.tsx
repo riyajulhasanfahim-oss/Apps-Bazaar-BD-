@@ -23,6 +23,7 @@ import {
   type OrderFieldErrors,
   type PaymentMethodName,
 } from '../../shared/orderValidation';
+import { DEFAULT_PAYMENT_METHODS } from '../../shared/paymentMethods';
 import {
   PAYMENT_BRAND_THEMES,
   PRICING_CONFIG,
@@ -96,23 +97,38 @@ export function BuyNowModal({ onClose }: BuyNowModalProps) {
   const loadPaymentMethods = useCallback(async (signal?: AbortSignal) => {
     setIsLoadingMethods(true);
     setMethodsError(null);
-    try {
-      const res = await fetch('/api/payment-methods', { signal });
-      const data = await res.json().catch(() => null);
-      if (!res.ok || !Array.isArray(data?.methods)) {
-        setMethodsError('Unable to load mobile banking options. Please try again.');
-        return;
-      }
-      const methods = data.methods as PublicPaymentMethod[];
+
+    const applyMethods = (methods: PublicPaymentMethod[]) => {
       setPaymentMethods(methods);
       if (methods.length > 0) {
         setSelectedMethod((prev) =>
           methods.some((m) => m.id === prev) ? prev : methods[0].id
         );
       }
+    };
+
+    try {
+      const res = await fetch('/api/payment-methods', { signal });
+      const contentType = res.headers.get('content-type') ?? '';
+      const isJson = contentType.includes('application/json');
+      const data = isJson ? await res.json().catch(() => null) : null;
+
+      // Static/Vercel SPA hosting without Express /api returns 404 or HTML fallback;
+      // use the built-in shared configuration instead of failing checkout.
+      if (res.status === 404 || !isJson) {
+        applyMethods(DEFAULT_PAYMENT_METHODS);
+        return;
+      }
+
+      if (!res.ok || !Array.isArray(data?.methods)) {
+        setMethodsError('Unable to load mobile banking options. Please try again.');
+        return;
+      }
+
+      applyMethods(data.methods as PublicPaymentMethod[]);
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') return;
-      setMethodsError('Network error while loading payment methods.');
+      applyMethods(DEFAULT_PAYMENT_METHODS);
     } finally {
       if (!signal?.aborted) {
         setIsLoadingMethods(false);
